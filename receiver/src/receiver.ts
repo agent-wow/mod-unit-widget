@@ -4,8 +4,6 @@ import { isBatch } from "./schema.ts";
 import { Store, SelectionError } from "./store.ts";
 import type { Icons } from "./icons.ts";
 import { badgeSvg } from "./badges.ts";
-import { stdoutOutput } from "./output.ts";
-import type { BatchOutput } from "./output.ts";
 
 export const MAX_BODY = 2 * 1024 * 1024;
 const encoder = new TextEncoder();
@@ -102,19 +100,16 @@ export function snapshotStream(store: Store, source: string, guid: string, signa
 
 export interface ReceiverOptions {
   host?: string; port?: number; token?: string; store?: Store; icons?: Icons; bodyTimeoutMs?: number;
-  output?: BatchOutput; diagnostic?: (message: string) => void;
+  diagnostic?: (message: string) => void;
 }
 export function createReceiver(options: ReceiverOptions = {}) {
   const store = options.store ?? new Store();
-  const output = options.output ?? stdoutOutput();
   const diagnostic = options.diagnostic ?? ((message: string) => console.error(message));
   const digest = (s: string) => new Bun.CryptoHasher("sha256").update(s).digest();
   const expected = options.token ? digest(`Bearer ${options.token}`) : null;
   const streams = new Set<() => void>();
   let active = 0;
   let stopping = false;
-  let outputFailed = false;
-  let writeQueue = Promise.resolve();
   let stopPromise: Promise<void> | undefined;
   const server = Bun.serve({
     hostname: options.host ?? "127.0.0.1", port: options.port ?? 3001,
@@ -133,7 +128,7 @@ export function createReceiver(options: ReceiverOptions = {}) {
             return failure(415, "Uncompressed application/json required");
           }
           if (Number(request.headers.get("content-length")) > MAX_BODY) return failure(413, "Body exceeds 2 MiB");
-          if (outputFailed || active >= 4) return failure(503, "Receiver unavailable; retry this batch");
+          if (active >= 4) return failure(503, "Receiver unavailable; retry this batch");
           server.timeout(request, 0);
           ++active;
           try {
@@ -145,25 +140,7 @@ export function createReceiver(options: ReceiverOptions = {}) {
             }
             if (!isBatch(value)) return failure(422, "Invalid unit snapshot schema");
             if (stopping) return failure(503, "Receiver stopping");
-            const accepted = value;
-            const received = performance.now();
-            const line = `${JSON.stringify(accepted)}\n`;
-            // Like the chat receiver, acknowledge only after a complete JSON line has drained to stdout.
-            // Four admitted requests also bound this queue when the output consumer is slow.
-            const write = writeQueue.then(async () => {
-              if (outputFailed) throw new SelectionError(503, "Receiver output unavailable");
-              try { await output.write(line); }
-              catch {
-                outputFailed = true;
-                diagnostic("Unit widget receiver: stdout failed; new batches will receive HTTP 503");
-                throw new SelectionError(503, "Receiver output unavailable");
-              }
-              const delay = Math.max(0, Math.ceil(performance.now() - received));
-              store.ingest({ ...accepted,
-                snapshots: accepted.snapshots.map((s) => ({ ...s, age_ms: s.age_ms + delay })) });
-            });
-            writeQueue = write.catch(() => {});
-            await write;
+            store.ingest(value);
             return new Response(null, { status: 204 });
           } finally { --active; }
         }
@@ -229,9 +206,7 @@ export function createReceiver(options: ReceiverOptions = {}) {
       stopping = true;
       for (const close of streams) close();
       await server.stop(true);
-      await writeQueue;
-      try { await output.close?.(); }
-      finally { options.icons?.close(); }
+      options.icons?.close();
     })();
     return stopPromise;
   } };

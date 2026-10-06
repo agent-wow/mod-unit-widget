@@ -19,12 +19,8 @@ bun run --silent start
 | `UNIT_WIDGET_ICON_CACHE` | `./data/icons.sqlite` | Persistent icon cache; `:memory:` is supported |
 
 Paths are relative to the process's working directory. Settings are read at startup. Diagnostics go to stderr.
-Every authenticated, schema-valid `POST /units` body is written as one JSON line to stdout before acknowledgement,
-including duplicate or expired snapshots. Headers and bearer credentials are not logged. This matches the chat
-receiver; redirect stdout to a file or pipe to collect batches. Live state stays in memory and repopulates after
-a receiver restart; stdout is not used for recovery. A failed stdout write returns `503` and stops admission until
-restart. A slow stdout consumer backpressures ingestion, with at most four requests pending; time spent waiting
-still counts toward snapshot staleness.
+`POST /units` requests are not logged. Validated batches update live state in memory before acknowledgement.
+Live state repopulates after a receiver restart.
 Widget/read endpoints intentionally require no token; the ingestion credential only protects `POST /units`.
 Use a trusted network or a reverse proxy for deployment-specific access controls and HTTPS. Disable proxy
 buffering for the SSE route. Bind and endpoint addresses must be reachable from the appropriate machines.
@@ -121,11 +117,11 @@ extend freshness or change generations.
 | `413` | Upload exceeds 2 MiB |
 | `415` | Unsupported media type or compression |
 | `422` | Invalid version or nested snapshot data |
-| `503` | Capacity, admission, stdout failure, or shutdown; `Retry-After: 1` |
+| `503` | Capacity, admission, or shutdown; `Retry-After: 1` |
 
-Four uploads may be active, including requests waiting on stdout. At most 100 snapshots are accepted per batch;
-validation and stdout writing complete before state changes. Receiver shutdown closes streams and active
-connections and drains queued output within the process's five-second shutdown budget. Unacknowledged uploads can retry.
+Four uploads may be active. At most 100 snapshots are accepted per batch; validation completes before state changes.
+Receiver shutdown closes streams and active connections within the process's five-second shutdown budget.
+Unacknowledged uploads can retry.
 
 `GET /api/units` and `GET /api/units/stream` accept the same source/name-or-GUID selector. Snapshot responses
 contain the original fields plus `source_id`, `process_id`, `stale`, and receiver-adjusted `age_ms`. An

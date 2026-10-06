@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { afterEach, expect, test } from "bun:test";
 import { createReceiver, MAX_BODY, snapshotStream } from "../src/receiver.ts";
-import type { ReceiverOptions } from "../src/receiver.ts";
 import { Store } from "../src/store.ts";
 import { batch, snapshot } from "../examples/fixtures.ts";
 const receivers: ReturnType<typeof createReceiver>[] = [];
 afterEach(async () => { await Promise.all(receivers.splice(0).map((r) => r.stop())); });
-function fixture(token?: string, options: ReceiverOptions = {}) {
-  const receiver = createReceiver({ port: 0, token, output: { async write() {} }, ...options });
+function fixture(token?: string) {
+  const receiver = createReceiver({ port: 0, token });
   receivers.push(receiver);
   const get = (path: string) => fetch(new URL(path, receiver.server.url));
   const send = (value: unknown = batch(), headers: Record<string, string> = {}) =>
@@ -30,53 +29,6 @@ test("ingestion authentication, schema, and public viewing routes", async () => 
   }
   expect((await get("/src/main.ts")).status).toBe(404);
   expect((await get("/units")).status).toBe(405);
-});
-test("logs authenticated valid requests as JSON lines, including retries, without headers", async () => {
-  const lines: string[] = [];
-  const { send } = fixture("test-token", { output: { async write(line) { lines.push(line); } } });
-  const data = batch({ ...snapshot(), name: "Alice\nForged log line" });
-  expect((await send(data)).status).toBe(401);
-  const auth = { Authorization: "Bearer test-token" };
-  expect((await send({ bad: "payload" }, auth)).status).toBe(422);
-  expect(lines).toEqual([]);
-  expect((await send(data, auth)).status).toBe(204);
-  expect((await send(data, auth)).status).toBe(204);
-  expect(lines).toEqual([`${JSON.stringify(data)}\n`, `${JSON.stringify(data)}\n`]);
-  expect(lines[0]!.split("\n")).toHaveLength(2);
-  expect(lines.join("")).not.toContain("test-token");
-});
-test("serializes stdout backpressure, bounds admission, and includes output delay in capture age", async () => {
-  const lines: string[] = [];
-  const gate = Promise.withResolvers<void>();
-  const receiver = fixture(undefined, { output: { async write(line) { lines.push(line); await gate.promise; } } });
-  const pending = Array.from({ length: 4 }, (_, i) => receiver.send(batch({ ...snapshot(), sequence: String(i + 1) })));
-  try {
-    for (let i = 0; i < 50 && receiver.activeRequests !== 4; ++i) await Bun.sleep(5);
-    expect(receiver.activeRequests).toBe(4);
-    expect(receiver.store.view("realm-1", snapshot().guid)).toBeNull();
-    expect(lines).toHaveLength(1);
-    expect((await receiver.send()).status).toBe(503);
-    await Bun.sleep(40);
-    gate.resolve();
-    expect((await Promise.all(pending)).map((response) => response.status)).toEqual([204, 204, 204, 204]);
-    expect(lines).toHaveLength(4);
-    const view = receiver.store.view("realm-1", snapshot().guid)!;
-    expect(view.sequence).toBe("4"); expect(view.age_ms).toBeGreaterThanOrEqual(40);
-  } finally { gate.resolve(); await Promise.all(pending); }
-});
-test("stdout failure returns retryable errors without publishing unlogged state and closes once", async () => {
-  let writes = 0; let closes = 0;
-  const diagnostics: string[] = [];
-  const { send, store, stop } = fixture(undefined, {
-    output: { async write() { ++writes; throw new Error("Broken output"); }, async close() { ++closes; } },
-    diagnostic: (message) => diagnostics.push(message),
-  });
-  const failed = await send();
-  expect(failed.status).toBe(503); expect(failed.headers.get("retry-after")).toBe("1");
-  expect((await send()).status).toBe(503); expect(writes).toBe(1);
-  expect(store.view("realm-1", snapshot().guid)).toBeNull();
-  expect(diagnostics).toEqual(["Unit widget receiver: stdout failed; new batches will receive HTTP 503"]);
-  await Promise.all([stop(), stop()]); expect(closes).toBe(1);
 });
 test("serves graphical class and creature fallbacks locally without an icon provider", async () => {
   const { get } = fixture();
@@ -152,7 +104,7 @@ test("already aborted streams do not leave timers or subscriptions", async () =>
   await connection.stream.cancel();
 });
 test("slow uploads occupy bounded slots, expire, and release admission", async () => {
-  const receiver = createReceiver({ port: 0, bodyTimeoutMs: 500, output: { async write() {} } });
+  const receiver = createReceiver({ port: 0, bodyTimeoutMs: 500 });
   receivers.push(receiver);
   const sockets: ReturnType<typeof Bun.connect> extends Promise<infer T> ? T[] : never = [];
   const replies: Promise<number>[] = [];

@@ -93,8 +93,7 @@ The receiver pushes full snapshots using SSE. A reconnect starts from current st
 five seconds old, the browser clears transient information and the target, dims the character identity,
 and reports stale data. Explicit logout shows Offline; transfers show Unavailable. Reconnection and login
 recover automatically. Keep the receiver on a trusted network: viewing APIs intentionally have no token.
-Validated ingestion batches are also written to receiver stdout as JSON lines, matching `mod-chat-widget`;
-diagnostics stay on stderr. Output backpressure counts toward capture age and delays acknowledgement.
+The receiver processes ingestion batches without request logging; diagnostics go to stderr.
 
 ## Configuration
 
