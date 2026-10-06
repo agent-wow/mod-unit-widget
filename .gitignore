@@ -1,0 +1,9 @@
+node_modules/
+build/
+conf/*.conf
+.env
+.env.*
+*.log
+receiver/data/
+receiver/icons/*
+!receiver/icons/manifest.example.json

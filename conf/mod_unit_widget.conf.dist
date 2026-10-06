@@ -1,0 +1,19 @@
+[worldserver]
+
+# Startup-only. An empty endpoint keeps capture and the worker inactive.
+UnitWidget.Enable = 1
+UnitWidget.Endpoint = ""
+UnitWidget.BearerToken = ""
+# Optional CA bundle for HTTPS; certificates and hostnames are always verified.
+UnitWidget.CAFile = ""
+# Defaults to realm-<RealmID>. One running sender per unique source ID.
+# UnitWidget.SourceId = "realm-1"
+
+# Sample all online characters and their selected target. Valid interval: 50..1000 ms.
+UnitWidget.UpdateIntervalMs = 100
+# Serialized snapshot budget (plus bounded JSON/container overhead), 512 KiB..256 MiB.
+# The queue holds at most 10000 characters, replacing older pending state in place.
+UnitWidget.QueueBytes = 16777216
+# RequestTimeoutMs must be >= ConnectTimeoutMs and <= 3000 ms.
+UnitWidget.ConnectTimeoutMs = 750
+UnitWidget.RequestTimeoutMs = 1500
