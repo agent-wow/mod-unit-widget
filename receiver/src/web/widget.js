@@ -41,7 +41,7 @@ function display(snapshot) {
   if (view.presence !== "online") {
     player?.inactive(view.name, view.presence.toUpperCase());
     target?.hide();
-    status.textContent = view.presence === "offline" ? "Character offline" : "Character changing maps…";
+    status.textContent = view.presence === "offline" ? "" : "Character changing maps…";
     return;
   }
   if (view.player) player?.update(view.player, view.age_ms);
