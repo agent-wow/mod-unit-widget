@@ -9,6 +9,7 @@ export const MAX_BODY = 2 * 1024 * 1024;
 const encoder = new TextEncoder();
 const assets = new Map([
   ["/widget", ["widget.html", "text/html; charset=utf-8"]],
+  ["/follow.js", ["follow.js", "text/javascript; charset=utf-8"]],
   ["/widget.js", ["widget.js", "text/javascript; charset=utf-8"]],
   ["/render.js", ["render.js", "text/javascript; charset=utf-8"]],
   ["/widget.css", ["widget.css", "text/css; charset=utf-8"]],
@@ -48,7 +49,7 @@ async function readBody(request: Request, timeout: number) {
 
 // Each subscriber has a byte budget, sends full snapshots, and never replays an event history.
 export function snapshotStream(store: Store, source: string, guid: string, signal: AbortSignal,
-  onClose: () => void = () => {}, highWaterMark = 256 * 1024) {
+  onClose: () => void = () => {}, highWaterMark = 256 * 1024, follow = false) {
   let cleanup = () => {};
   let closed = false;
   const stream = new ReadableStream<Uint8Array>({
@@ -77,8 +78,8 @@ export function snapshotStream(store: Store, source: string, guid: string, signa
       };
       const update = () => {
         if (closed) return;
-        const view = store.view(source, guid);
-        const next = view ? `${view.process_id}:${view.sequence}:${view.stale}` : "waiting";
+        const view = store.view(source, guid, follow);
+        const next = view ? `${view.process_id}:${view.guid}:${view.sequence}:${view.stale}` : "waiting";
         if (signature !== next) {
           signature = next;
           send(`event: snapshot\ndata: ${JSON.stringify(view)}\n\n`);
@@ -181,13 +182,15 @@ export function createReceiver(options: ReceiverOptions = {}) {
         }
         if (["/api/units", "/api/units/stream"].includes(url.pathname)) {
           const { source, guid } = store.resolve(url.searchParams);
-          if (url.pathname === "/api/units") return Response.json(store.view(source, guid), {
+          const follow = url.searchParams.get("follow") === "watch";
+          if (url.pathname === "/api/units") return Response.json(store.view(source, guid, follow), {
             headers: { "Cache-Control": "no-store" },
           });
           if (streams.size >= 128) return failure(503, "Stream capacity reached");
           server.timeout(request, 0);
           let close = () => {};
-          const connection = snapshotStream(store, source, guid, request.signal, () => streams.delete(close));
+          const connection = snapshotStream(store, source, guid, request.signal,
+            () => streams.delete(close), undefined, follow);
           close = connection.close;
           if (!connection.closed) streams.add(close);
           return new Response(connection.stream, { headers: { "Content-Type": "text/event-stream",

@@ -4,8 +4,29 @@ Live WotLK-style character and selected-target frames for OBS. Includes an Azero
 standalone Bun receiver, and transparent browser overlay. Tracks all online characters using existing
 module hooks; no client addon, core patch, database table, or SQL installation is needed.
 
-The module is independent of `mod-chat-widget` and `mod-watch` and can run alongside either. Choose the
-character directly in the widget URL, including a character being observed with `.watch`.
+The module runs independently or alongside the other widgets. Choose a fixed character directly in
+the widget URL, or opt into following a `mod-watch` observer as described below.
+
+## Follow a watch observer
+
+Append `follow=watch` to select an observer's current `mod-watch` assignment:
+
+```text
+http://127.0.0.1:3001/widget?source=realm-1&character=Observer&follow=watch&frame=both
+```
+
+Use the observer's name or `guid`, not the target's. Names resolve once to an observer GUID;
+retargeting with `.watch` switches the widget automatically, including across browser reconnects.
+`.unwatch`, disabling watch, or observer logout returns the widget to the observer. An offline,
+transferring, or temporarily unobservable target keeps its assignment. Missing target data shows a
+waiting state; stale observer data clears the display until fresh assignment data arrives. Each
+observer and source is independent, and only the direct assignment is followed.
+
+Upgrade `mod-watch`, this module, and its receiver together through your normal deployment workflow.
+The integration uses an optional header from the sibling `modules/mod-watch` directory at compilation;
+there is no linked module dependency, additional receiver, or realm database change. Without that
+header, with watch disabled, or with a legacy publisher, following displays the selected observer.
+Omitting `follow` always keeps the original fixed-character behavior.
 
 ## Installation
 

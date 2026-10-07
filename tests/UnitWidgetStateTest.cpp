@@ -12,6 +12,24 @@ Snapshot MakeSnapshot(std::string guid, std::uint64_t sequence, Time now = Time{
     return {guid, sequence, now, {{"guid", guid}, {"presence", "online"}}};
 }
 
+TEST(UnitWidgetState, WatchTargetClearingSurvivesRetryAndSerialization)
+{
+    SnapshotQueue queue;
+    auto observed = MakeSnapshot("Observer", 1);
+    observed.Data["watch_target"] = {{"guid", "Watched"}, {"name", "Watched"}};
+    EXPECT_TRUE(queue.Push(observed));
+    auto flight = queue.Take(Time{});
+    auto published = Batch("realm", "process", flight, Time{});
+    EXPECT_EQ(published["snapshots"][0]["watch_target"]["guid"], "Watched");
+    observed.Sequence = 2;
+    observed.Data["watch_target"] = nullptr;
+    EXPECT_TRUE(queue.Push(observed));
+    queue.Retry(std::move(flight), Time{} + 100ms);
+    auto result = Batch("realm", "process", queue.Take(Time{} + 100ms), Time{} + 100ms);
+    EXPECT_TRUE(result["snapshots"][0]["watch_target"].is_null());
+    EXPECT_EQ(result["snapshots"][0]["sequence"], "2");
+}
+
 TEST(UnitWidgetState, NormalizesTenthsWithoutChangingOtherResources)
 {
     EXPECT_DOUBLE_EQ(DisplayPower(1, 425), 42.5);

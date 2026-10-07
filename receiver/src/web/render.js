@@ -94,6 +94,14 @@ export class UnitFrame {
     this.castId = "";
     this.guid = "";
   }
+  reset() {
+    this.guid = ""; this.castId = ""; this.extraKey = ""; this.data = null;
+    for (const aura of this.auras.values()) aura.root.remove();
+    this.auras.clear(); this.extra.replaceChildren(); this.badge.replaceChildren(); this.badgeKey = "";
+    this.level.textContent = ""; this.rank.textContent = "";
+    this.health.fill.style.transform = "scaleX(0)"; this.health.text.textContent = "";
+    this.power.root.style.visibility = "hidden"; this.castRoot.classList.add("hidden");
+  }
   /** @param {string} name @param {string} status */
   inactive(name, status) {
     this.root.classList.remove("empty");

@@ -7,6 +7,27 @@ Runtime dependencies are built into Bun 1.4.2+. Copy this directory to the recei
 bun run --silent start
 ```
 
+## Watch-following API
+
+The widget and `GET /api/units` / `GET /api/units/stream` accept optional `follow=watch`.
+The existing `source` and exactly one of `character` or `guid` identify the **observer**.
+Omit `follow` for fixed selection; other values and repeated `follow` parameters return HTTP 400.
+Discovery remains a direct character lookup. Browser clients resolve the observer once through
+`/api/characters` and retain that GUID instead of replacing it with a returned target GUID.
+
+Schema version 1 adds optional `watch_target: { "guid": "…", "name": "Alice" } | null` to snapshots.
+Omitted or null metadata means no assignment. GUIDs and names must be nonempty strings, limited to
+256 and 512 UTF-8 bytes respectively. Metadata follows the record's existing ordering and freshness
+rules; duplicate or older records cannot revive a cleared assignment. Publishers send null at logout.
+Follow selection stays within the source, follows one assignment, and returns to the observer on
+unwatch or observer logout. Target logout/transfer retains the assignment. Missing or stale observer
+state produces a null response/event, which clients must use to clear the previous display.
+
+A switch emits a new snapshot before any target panels, even within the same server process and
+catalogue. Clients must discard the previous character's rendering state on GUID changes and null
+snapshots. Existing data age, backpressure, and reconnection rules still apply.
+
+
 ## Settings
 
 | Environment variable | Default | Purpose |
