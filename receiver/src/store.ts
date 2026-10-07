@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import { STALE_MS } from "./schema.ts";
+import { validFollow } from "./watch.ts";
 import type { Batch, Snapshot, View } from "./schema.ts";
 
 interface Entry { snapshot: Snapshot; received: number; bytes: number }
@@ -87,7 +88,7 @@ export class Store {
     const source = params.get("source");
     const guid = params.get("guid");
     const name = params.get("character");
-    if (!source || source.length > 256 || Boolean(guid) === Boolean(name) ||
+    if (!validFollow(params) || !source || source.length > 256 || Boolean(guid) === Boolean(name) ||
       params.getAll("source").length !== 1 || params.getAll("guid").length > 1 ||
       params.getAll("character").length > 1) {
       throw new SelectionError(400, "Select a source and one character name or GUID");
@@ -101,7 +102,16 @@ export class Store {
     if (found.length > 1) throw new SelectionError(409, "Ambiguous character name; select a GUID");
     return { source, guid: found[0]!.guid };
   }
-  view(sourceId: string, guid: string): View | null {
+  watchedGuid(source: string, observer: string): string | null {
+    const view = this.view(source, observer);
+    if (!view || view.stale) return null;
+    return view.presence === "offline" ? observer : view.watch_target?.guid ?? observer;
+  }
+  view(sourceId: string, guid: string, follow = false): View | null {
+    if (follow) {
+      const selected = this.watchedGuid(sourceId, guid);
+      return selected === null ? null : this.view(sourceId, selected);
+    }
     const source = this.sources.get(sourceId);
     const entry = source?.entries.get(guid);
     if (!source || !entry) return null;

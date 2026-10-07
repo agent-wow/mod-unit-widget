@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+import { resolveObserver, validFollow, SelectionError } from "./follow.js";
 import { UnitFrame } from "./render.js";
 /** @typedef {import('../schema.ts').View} View */
 const root = /** @type {HTMLElement} */ (document.getElementById("frames"));
 const status = /** @type {HTMLElement} */ (document.getElementById("connection"));
 const params = new URLSearchParams(location.search);
+const follow = params.get("follow") === "watch";
 const source = params.get("source");
 const mode = params.get("frame") || "both";
 let guid = params.get("guid");
@@ -15,6 +17,7 @@ let view = null;
 let received = 0;
 let framesStale = false;
 let failures = 0;
+let stopped = false;
 /** @type {EventSource | null} */
 let connection = null;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -27,6 +30,9 @@ function stale() {
 }
 /** @param {View | null} snapshot */
 function display(snapshot) {
+  if (view?.guid !== snapshot?.guid || view?.process_id !== snapshot?.process_id) {
+    player?.reset(); target?.reset();
+  }
   received = performance.now();
   view = snapshot;
   if (!view) {
@@ -50,8 +56,11 @@ function display(snapshot) {
   status.textContent = "";
 }
 async function connect() {
+  if (stopped) return;
   try {
+    guid = await resolveObserver(source, guid, character, follow);
     const query = new URLSearchParams({ source: source || "" });
+    if (follow) query.set("follow", "watch");
     query.set(guid ? "guid" : "character", guid || character || "");
     const response = await fetch(`/api/units?${query}`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!response.ok) {
@@ -61,19 +70,30 @@ async function connect() {
       throw new Error("Waiting");
     }
     const snapshot = /** @type {View | null} */ (await response.json());
-    if (snapshot) { guid = snapshot.guid; query.delete("character"); query.set("guid", guid); }
+    if (snapshot && !follow) guid = snapshot.guid;
+    if (guid) { query.delete("character"); query.set("guid", guid); }
     display(snapshot);
-    connection = new EventSource(`/api/units/stream?${query}`);
-    connection.onopen = () => { failures = 0; };
-    connection.addEventListener("snapshot", (event) => { display(JSON.parse(event.data)); });
-    connection.onerror = () => {
+    const current = new EventSource(`/api/units/stream?${query}`); connection = current;
+    current.onopen = () => { if (connection !== current || stopped) return; failures = 0; };
+    current.addEventListener("snapshot", (event) => {
+      if (connection === current && !stopped) display(JSON.parse(event.data));
+    });
+    current.onerror = () => {
+      if (connection !== current || stopped) return;
       connection?.close();
       status.textContent = "Reconnecting…";
       schedule();
     };
-  } catch { schedule(); }
+  } catch (error) {
+    if (error instanceof SelectionError) {
+      status.textContent = error.message;
+      if ([400, 409].includes(error.status)) { stopped = true; return; }
+    }
+    schedule();
+  }
 }
 function schedule() {
+  if (stopped) return;
   clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(() => { void connect(); }, Math.min(1000 * 2 ** Math.min(failures++, 4), 10000));
 }
@@ -84,10 +104,11 @@ function animate(now) {
   if (now - last >= 33) { player?.tick(now); target?.tick(now); last = now; }
   requestAnimationFrame(animate);
 }
-if (!source || Boolean(guid) === Boolean(character) || !["both", "player", "target"].includes(mode)) {
+if (!validFollow(params) || !source || Boolean(guid) === Boolean(character) ||
+  !["both", "player", "target"].includes(mode)) {
   status.textContent = "Select /widget?source=realm-1&character=Alice&frame=both";
 } else {
   void connect();
   requestAnimationFrame(animate);
 }
-window.addEventListener("pagehide", () => { connection?.close(); clearTimeout(reconnectTimer); });
+window.addEventListener("pagehide", () => { stopped = true; connection?.close(); clearTimeout(reconnectTimer); });

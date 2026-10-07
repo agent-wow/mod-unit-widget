@@ -2,6 +2,7 @@
 #include "UnitWidgetSender.h"
 #include "AllSpellScript.h"
 #include "Config.h"
+#include "WidgetWatch.h"
 #include "Creature.h"
 #include "CryptoRandom.h"
 #include "Log.h"
@@ -141,7 +142,9 @@ public:
                         target = Frame(selected, player, false, now);
             auto guid = player->GetGUID().ToString();
             _sender->Push({guid, ++_sequence, now, {{"guid", guid}, {"name", player->GetName()},
-                {"presence", presence}, {"player", std::move(self)}, {"target", std::move(target)}}});
+                {"presence", presence}, {"watch_target", WidgetWatch::Capture<Json>(player,
+                    std::string_view(presence) == "offline")},
+                {"player", std::move(self)}, {"target", std::move(target)}}});
         }
         catch (std::exception const&)
         {

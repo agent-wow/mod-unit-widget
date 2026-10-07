@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+import { isWatchTarget } from "./watch.ts";
+import type { WatchTarget } from "./watch.ts";
 export const STALE_MS = 5000;
 export interface Power { type: number; value: number; max: number }
 export interface Aura {
@@ -19,6 +21,7 @@ export interface Frame {
   extra: { combo_points: number; mana: Power | null; runes: Rune[] };
 }
 export interface Snapshot {
+  watch_target?: WatchTarget | null;
   guid: string; name: string; presence: "online" | "offline" | "unavailable";
   sequence: string; age_ms: number; player: Frame | null; target: Frame | null;
 }
@@ -67,7 +70,7 @@ function frame(v: unknown): v is Frame {
     [0, 6].includes(v.extra.runes.length) && v.extra.runes.every(rune);
 }
 function snapshot(v: unknown): v is Snapshot {
-  if (!object(v) || !text(v.guid) || !text(v.name, 512) || !sequence(v.sequence) ||
+  if (!object(v) || !isWatchTarget(v.watch_target) || !text(v.guid) || !text(v.name, 512) || !sequence(v.sequence) ||
     !integer(v.age_ms, 86400000) || !choices(v.presence, ["online", "offline", "unavailable"])) return false;
   if (v.presence !== "online") return v.player === null && v.target === null;
   return frame(v.player) && v.player.guid === v.guid && v.player.kind === "player" &&
